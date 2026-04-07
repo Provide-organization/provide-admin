@@ -1,7 +1,6 @@
-# backend/Dockerfile
 FROM php:8.3-fpm-alpine
- 
-# Instala dependências do sistema
+
+# ─── Dependências do sistema ─────────────────────────────────────────────────
 RUN apk add --no-cache \
     postgresql-dev \
     libpng-dev \
@@ -10,28 +9,38 @@ RUN apk add --no-cache \
     unzip \
     git \
     curl \
-    vim
- 
-# Instala extensões PHP necessárias
+    vim \
+    su-exec
+
+# ─── Extensões PHP ───────────────────────────────────────────────────────────
 RUN docker-php-ext-install \
     pdo \
     pdo_pgsql \
     gd \
     zip \
     opcache
- 
-# Instala o Composer
+
+# ─── Composer ────────────────────────────────────────────────────────────────
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
- 
-# Define o diretório de trabalho
+
 WORKDIR /var/www/html
- 
-# Permissões corretas para o storage do Laravel
-RUN chown -R www-data:www-data /var/www/html
- 
-# Expõe a porta do PHP-FPM
+
+# ─── Instalar dependências PHP no build (antes do bind mount) ────────────────
+COPY composer.json composer.lock ./
+
+RUN composer install \
+    --no-scripts \
+    --no-autoloader \
+    --no-interaction \
+    --prefer-dist
+
+# ─── Copiar o restante do código (usado em produção; em dev é sobrescrito) ───
+COPY . .
+
+RUN composer dump-autoload --optimize \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 storage bootstrap/cache
+
 EXPOSE 9000
- 
+
 CMD ["php-fpm"]
-
-
