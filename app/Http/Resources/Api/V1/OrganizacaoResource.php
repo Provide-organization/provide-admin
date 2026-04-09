@@ -12,13 +12,13 @@ class OrganizacaoResource extends JsonResource
         $instance = $this->tenantInstance;
 
         return [
-            'id'         => $this->id,
-            'nome'       => $this->nome,
-            'slug'       => $this->slug,
-            'cnpj'       => $this->cnpj,
-            'telefone'   => $this->telefone,
-            'ativo'      => $this->ativo,
-            'criado_em'  => $this->created_at?->toDateString(),
+            'id'       => $this->id,
+            'nome'     => $this->nome,
+            'slug'     => $this->slug,
+            'cnpj'     => $this->cnpj,
+            'telefone'     => $this->telefone,
+            'ativo'        => $this->ativo,
+            'criado_em'    => $this->created_at?->toDateString(),
             'tenant'     => $instance ? [
                 'status'         => $instance->status,
                 'container_name' => $instance->container_name,

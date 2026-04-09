@@ -31,10 +31,10 @@ class TenantAbrigoController extends Controller
             'nome'              => 'required|string|max:255',
             'cep'               => 'nullable|string|max:9',
             'telefone'          => 'nullable|string|max:20',
+            'cidade'            => 'nullable|string|max:100',
             'capacidade_atual'  => 'required|integer|min:0',
             'capacidade_maxima' => 'required|integer|min:1',
             'status'            => 'nullable|boolean',
-            'cidade_id'         => 'required|integer',
             'gestor_id'         => 'nullable|integer',
         ]);
 
@@ -56,10 +56,10 @@ class TenantAbrigoController extends Controller
             'nome'              => 'nullable|string|max:255',
             'cep'               => 'nullable|string|max:9',
             'telefone'          => 'nullable|string|max:20',
+            'cidade'            => 'nullable|string|max:100',
             'capacidade_atual'  => 'nullable|integer|min:0',
             'capacidade_maxima' => 'nullable|integer|min:1',
             'status'            => 'nullable|boolean',
-            'cidade_id'         => 'nullable|integer',
             'gestor_id'         => 'nullable|integer',
         ]);
 

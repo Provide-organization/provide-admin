@@ -114,7 +114,7 @@ class TenantUsuarioController extends Controller
             || stripos($msg, 'table') !== false;
 
         $message = $isSchemaError
-            ? 'O banco do tenant existe mas as migrations ainda não foram executadas. Reconstrua o container platform-backend com docker-cli e recrie a organização.'
+            ? 'O banco do tenant existe mas as migrations ainda não foram executadas. Garanta admin-backend com Docker/socket e instancia-demo ativo; reprovisione ou recrie a organização.'
             : 'O banco de dados do tenant não está acessível. Verifique o status do provisionamento.';
 
         return response()->json([

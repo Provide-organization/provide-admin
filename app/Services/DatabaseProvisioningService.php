@@ -11,7 +11,7 @@ class DatabaseProvisioningService
     /**
      * Provisiona um novo banco de dados para o tenant:
      * 1. Cria o database e usuário PostgreSQL
-     * 2. Roda migrations via docker exec no container tenant-demo
+     * 2. Roda migrations via docker exec no container da instância Laravel (padrão: instancia-demo)
      * 3. Roda ReferenceSeeder (dados essenciais de RBAC, localização, etc.)
      * 4. Marca o TenantInstance como 'active'
      *
@@ -78,7 +78,8 @@ class DatabaseProvisioningService
         if ($this->outputIndicatesFailure($output)) {
             throw new \RuntimeException(
                 "Migrations não puderam ser executadas no tenant '{$dbName}'. " .
-                "Verifique se o container platform-backend foi reconstruído com docker-cli. " .
+                "Verifique se admin-backend tem Docker CLI e socket montado, e se o container " .
+                "da instância está em execução (padrão: instancia-demo; TENANT_RUNNER_CONTAINER no .env). " .
                 "Saída: " . substr($output, 0, 300)
             );
         }
@@ -96,7 +97,7 @@ class DatabaseProvisioningService
     }
 
     /**
-     * Executa um comando no container tenant-demo com o banco do novo tenant.
+     * Executa um comando no container da instância (TENANT_RUNNER_CONTAINER) com o banco do novo tenant.
      * Usa as credenciais master que têm acesso a todos os databases.
      */
     private function dockerExec(string $dbName, string $command): string
@@ -107,7 +108,7 @@ class DatabaseProvisioningService
             return ''; // Tratado como falha em outputIndicatesFailure()
         }
 
-        $containerName = env('TENANT_RUNNER_CONTAINER', 'tenant-demo');
+        $containerName = env('TENANT_RUNNER_CONTAINER', 'instancia-demo');
         $dbHost        = config('database.connections.pgsql.host');
         $dbUsername    = config('database.connections.pgsql.username');
         $dbPassword    = config('database.connections.pgsql.password');

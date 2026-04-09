@@ -16,7 +16,6 @@ class TenantAbrigoService
 
         return DB::connection($conn)
             ->table('abrigos as a')
-            ->leftJoin('cidades as c', 'c.id', '=', 'a.cidade_id')
             ->leftJoin('pessoas as p', function ($j) {
                 $j->on('p.id', '=', 'a.gestor_id')->whereNull('p.deleted_at');
             })
@@ -26,11 +25,10 @@ class TenantAbrigoService
                 'a.nome',
                 'a.cep',
                 'a.telefone',
+                'a.cidade',
                 'a.capacidade_atual',
                 'a.capacidade_maxima',
                 'a.status',
-                'a.cidade_id',
-                'c.nome as cidade_nome',
                 'a.gestor_id',
                 'p.nome_completo as gestor_nome',
                 'a.created_at',
@@ -42,9 +40,8 @@ class TenantAbrigoService
                 $max = max(1, (int) $r['capacidade_maxima']);
                 $r['lotacao_percentual'] = round(($r['capacidade_atual'] / $max) * 100, 1);
                 $r['esta_lotado']        = $r['capacidade_atual'] >= $r['capacidade_maxima'];
-                $r['cidade']            = $r['cidade_nome'] ? ['id' => $r['cidade_id'], 'nome' => $r['cidade_nome']] : null;
-                $r['gestor']            = $r['gestor_id'] ? ['id' => $r['gestor_id'], 'nome_completo' => $r['gestor_nome']] : null;
-                unset($r['cidade_nome'], $r['gestor_nome']);
+                $r['gestor']             = $r['gestor_id'] ? ['id' => $r['gestor_id'], 'nome_completo' => $r['gestor_nome']] : null;
+                unset($r['gestor_nome']);
                 return $r;
             })
             ->toArray();
@@ -59,12 +56,12 @@ class TenantAbrigoService
 
         $id = DB::connection($conn)->table('abrigos')->insertGetId([
             'nome'               => $data['nome'],
-            'cep'                => $data['cep']        ?? null,
-            'telefone'           => $data['telefone']   ?? null,
+            'cep'                => $data['cep']       ?? null,
+            'telefone'           => $data['telefone']  ?? null,
+            'cidade'             => $data['cidade']    ?? null,
             'capacidade_atual'   => $data['capacidade_atual'],
             'capacidade_maxima'  => $data['capacidade_maxima'],
             'status'             => $data['status'] ?? true,
-            'cidade_id'          => $data['cidade_id'],
             'gestor_id'          => $data['gestor_id'] ?? null,
             'created_at'         => $now,
             'updated_at'         => $now,
@@ -84,9 +81,9 @@ class TenantAbrigoService
             'nome'              => $data['nome']             ?? null,
             'cep'               => $data['cep']              ?? null,
             'telefone'          => $data['telefone']         ?? null,
+            'cidade'            => $data['cidade']           ?? null,
             'capacidade_atual'  => $data['capacidade_atual'] ?? null,
             'capacidade_maxima' => $data['capacidade_maxima'] ?? null,
-            'cidade_id'         => $data['cidade_id']        ?? null,
         ], fn($v) => !is_null($v));
 
         if (array_key_exists('status', $data)) {
@@ -145,16 +142,14 @@ class TenantAbrigoService
     {
         $row = DB::connection($conn)
             ->table('abrigos as a')
-            ->leftJoin('cidades as c', 'c.id', '=', 'a.cidade_id')
             ->leftJoin('pessoas as p', function ($j) {
                 $j->on('p.id', '=', 'a.gestor_id')->whereNull('p.deleted_at');
             })
             ->where('a.id', $abrigoId)
             ->whereNull('a.deleted_at')
             ->select(
-                'a.id', 'a.nome', 'a.cep', 'a.telefone',
+                'a.id', 'a.nome', 'a.cep', 'a.telefone', 'a.cidade',
                 'a.capacidade_atual', 'a.capacidade_maxima', 'a.status',
-                'a.cidade_id', 'c.nome as cidade_nome',
                 'a.gestor_id', 'p.nome_completo as gestor_nome',
                 'a.created_at',
             )
@@ -168,9 +163,8 @@ class TenantAbrigoService
         $max = max(1, (int) $r['capacidade_maxima']);
         $r['lotacao_percentual'] = round(($r['capacidade_atual'] / $max) * 100, 1);
         $r['esta_lotado']        = $r['capacidade_atual'] >= $r['capacidade_maxima'];
-        $r['cidade']            = $r['cidade_nome'] ? ['id' => $r['cidade_id'], 'nome' => $r['cidade_nome']] : null;
-        $r['gestor']            = $r['gestor_id'] ? ['id' => $r['gestor_id'], 'nome_completo' => $r['gestor_nome']] : null;
-        unset($r['cidade_nome'], $r['gestor_nome']);
+        $r['gestor']             = $r['gestor_id'] ? ['id' => $r['gestor_id'], 'nome_completo' => $r['gestor_nome']] : null;
+        unset($r['gestor_nome']);
 
         return $r;
     }
