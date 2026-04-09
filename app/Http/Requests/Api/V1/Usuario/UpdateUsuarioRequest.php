@@ -15,16 +15,12 @@ class UpdateUsuarioRequest extends FormRequest
     {
         return [
             'nome'  => ['sometimes', 'string', 'max:255'],
-            'role'  => ['sometimes', 'integer', 'min:2', 'max:5'],
             'ativo' => ['boolean'],
         ];
     }
 
     public function messages(): array
     {
-        return [
-            'role.min' => 'Nível de acesso inválido.',
-            'role.max' => 'Nível de acesso inválido.',
-        ];
+        return [];
     }
 }

@@ -10,6 +10,7 @@ use App\Models\Organizacao;
 use App\Services\OrganizacaoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class OrganizacaoController extends Controller
 {
@@ -40,6 +41,63 @@ class OrganizacaoController extends Controller
         $organizacao = $this->service->update($organizacao, $request->validated());
 
         return response()->json(['data' => new OrganizacaoResource($organizacao)]);
+    }
+
+    public function showBySlug(string $slug): JsonResponse
+    {
+        $organizacao = Organizacao::with('tenantInstance')->where('slug', $slug)->firstOrFail();
+        return response()->json(['data' => new OrganizacaoResource($organizacao)]);
+    }
+
+    /**
+     * Endpoint público (sem autenticação) para verificar se uma organização existe e está ativa.
+     * Usado pelo middleware Next.js para bloquear acesso a subdomínios inválidos.
+     */
+    public function check(string $slug): JsonResponse
+    {
+        $exists = Organizacao::where('slug', $slug)->where('ativo', true)->exists();
+
+        if (! $exists) {
+            return response()->json([
+                'exists'  => false,
+                'message' => "Organização '{$slug}' não encontrada ou inativa.",
+            ], 404);
+        }
+
+        return response()->json(['exists' => true]);
+    }
+
+    public function reprovision(string $slug): JsonResponse
+    {
+        try {
+            $organizacao = Organizacao::with('tenantInstance')->where('slug', $slug)->firstOrFail();
+
+            if (! $organizacao->tenantInstance) {
+                return response()->json([
+                    'message' => 'Instância de tenant não encontrada para esta organização.',
+                    'code'    => 'TENANT_INSTANCE_NOT_FOUND',
+                ], 404);
+            }
+
+            $this->service->reprovision($organizacao->tenantInstance);
+
+            return response()->json([
+                'message' => 'Tenant provisionado com sucesso.',
+                'data'    => new OrganizacaoResource($organizacao->fresh('tenantInstance')),
+            ]);
+        } catch (ModelNotFoundException) {
+            return response()->json(['message' => 'Organização não encontrada.'], 404);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code'    => 'REPROVISION_FAILED',
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Falha no provisionamento: ' . $e->getMessage(),
+                'code'    => 'REPROVISION_ERROR',
+            ], 503);
+        }
     }
 
     public function destroy(Organizacao $organizacao): JsonResponse

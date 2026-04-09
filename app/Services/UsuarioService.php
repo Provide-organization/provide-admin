@@ -14,9 +14,15 @@ class UsuarioService
 {
     public function index(): Collection
     {
-        return Usuario::with(['pessoa', 'perfis'])
-            ->orderBy('id')
-            ->get();
+        $q = Usuario::with(['pessoa', 'perfis'])
+            ->whereHas('perfis', fn ($rel) => $rel->where('nivel', 1))
+            ->orderBy('id');
+
+        if ($id = auth()->guard('api')->id()) {
+            $q->where('id', '!=', $id);
+        }
+
+        return $q->get();
     }
 
     public function store(array $data): array
@@ -73,17 +79,6 @@ class UsuarioService
             } else {
                 Pessoa::create(['nome_completo' => $data['nome'], 'usuario_id' => $usuario->id]);
             }
-        }
-
-        if (isset($data['role'])) {
-            $perfil = Perfil::where('nivel', $data['role'])->firstOrFail();
-            UsuarioPerfil::where('usuario_id', $usuario->id)->delete();
-            UsuarioPerfil::create([
-                'usuario_id'  => $usuario->id,
-                'perfil_id'   => $perfil->id,
-                'tipo_escopo' => null,
-                'escopo_id'   => null,
-            ]);
         }
 
         if (isset($data['ativo'])) {

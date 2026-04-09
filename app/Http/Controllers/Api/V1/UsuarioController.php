@@ -44,6 +44,13 @@ class UsuarioController extends Controller
 
     public function destroy(Usuario $usuario): JsonResponse
     {
+        if ($usuario->id === auth()->id()) {
+            return response()->json([
+                'message' => 'Você não pode excluir a própria conta.',
+                'code'    => 'SELF_DELETE_FORBIDDEN',
+            ], 422);
+        }
+
         $this->service->destroy($usuario);
         return response()->json(['message' => 'Usuário removido com sucesso.']);
     }

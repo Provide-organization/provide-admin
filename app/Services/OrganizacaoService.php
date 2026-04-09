@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Collection;
 
 class OrganizacaoService
 {
+    public function __construct(private readonly DatabaseProvisioningService $provisioning) {}
+
     public function index(): Collection
     {
         return Organizacao::with('tenantInstance')->orderBy('nome')->get();
@@ -27,9 +29,7 @@ class OrganizacaoService
 
         $organizacao = Organizacao::create($data);
 
-        // Registra a instância do tenant em estado provisioning
-        // (provisionamento real ocorre na Fase 2/3 — aqui registra o intent)
-        TenantInstance::create([
+        $instance = TenantInstance::create([
             'organizacao_id' => $organizacao->id,
             'slug'           => $organizacao->slug,
             'container_name' => "tenant-{$organizacao->slug}",
@@ -38,6 +38,17 @@ class OrganizacaoService
             'status'         => 'provisioning',
         ]);
 
+        // Provisiona banco, migrations e seeder de forma síncrona (Fase 2)
+        try {
+            $this->provisioning->provision($instance);
+        } catch (\Throwable $e) {
+            // Falha no provisionamento não desfaz a org — admin pode reprovisionare
+            \Illuminate\Support\Facades\Log::error('Falha no provisionamento do tenant', [
+                'slug'  => $organizacao->slug,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $organizacao->load('tenantInstance');
     }
 
@@ -45,6 +56,17 @@ class OrganizacaoService
     {
         $organizacao->update($data);
         return $organizacao->fresh(['tenantInstance']);
+    }
+
+    /**
+     * Retenta o provisionamento de um tenant (qualquer status).
+     * Lança exceção se o docker não estiver disponível ou se as migrations falharem.
+     */
+    public function reprovision(TenantInstance $instance): void
+    {
+        $instance->update(['status' => 'provisioning', 'provisioned_at' => null]);
+
+        $this->provisioning->provision($instance);
     }
 
     public function destroy(Organizacao $organizacao): void

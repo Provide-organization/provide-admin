@@ -10,7 +10,8 @@ RUN apk add --no-cache \
     git \
     curl \
     vim \
-    su-exec
+    su-exec \
+    docker-cli
 
 # ─── Extensões PHP ───────────────────────────────────────────────────────────
 RUN docker-php-ext-install \
@@ -38,9 +39,20 @@ RUN composer install \
 COPY . .
 
 RUN composer dump-autoload --optimize \
+    && mkdir -p storage/app/public \
+              storage/framework/cache/data \
+              storage/framework/sessions \
+              storage/framework/testing \
+              storage/framework/views \
+              storage/logs \
+              bootstrap/cache \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
 
+COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 9000
 
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["php-fpm"]
