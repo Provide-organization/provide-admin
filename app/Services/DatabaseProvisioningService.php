@@ -4,33 +4,48 @@ namespace App\Services;
 
 use App\Models\TenantInstance;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * Provisionamento enxuto (dev/TCC):
+ *
+ *   1. Cria database + user PostgreSQL isolados (tenant_{slug}, tenant_{slug}_user)
+ *   2. Executa migrations + seeder no container `instancia` compartilhado,
+ *      forçando DB_DATABASE=tenant_{slug} via env na chamada `docker exec`.
+ *   3. Marca TenantInstance como 'active'.
+ *
+ * Em produção, substituir por:
+ *   - container dedicado por cliente (isolamento de processo)
+ *   - par de chaves RS256 dedicado
+ *   - nginx com server block dedicado
+ * (ver ARQUITETURA_MULTI_INSTANCIA.md — roadmap pós-TCC).
+ */
 class DatabaseProvisioningService
 {
-    /**
-     * Provisiona um novo banco de dados para o tenant:
-     * 1. Cria o database e usuário PostgreSQL
-     * 2. Roda migrations via docker exec no container da instância Laravel (padrão: instancia-demo)
-     * 3. Roda ReferenceSeeder (dados essenciais de RBAC, localização, etc.)
-     * 4. Marca o TenantInstance como 'active'
-     *
-     * Em produção, isso deve ser movido para um Job assíncrono via queue.
-     */
     public function provision(TenantInstance $instance): void
     {
         try {
+            // 1) Database isolado
             $this->createDatabase($instance->db_name, $instance->db_username);
+
+            // 2) Migrations + seeder dentro do container compartilhado
             $this->runMigrations($instance->db_name);
             $this->runSeeder($instance->db_name);
             $this->assertTenantUsuariosTable($instance->db_name);
 
+            // 3) Marca ativo
             $instance->update([
                 'status'         => 'active',
+                'container_name' => env('INSTANCIA_CONTAINER', 'instancia-backend'),
                 'provisioned_at' => now(),
             ]);
         } catch (\Throwable $e) {
             $instance->update(['status' => 'failed']);
+            Log::error('Falha no provisionamento do tenant', [
+                'slug'  => $instance->slug,
+                'error' => $e->getMessage(),
+            ]);
             throw $e;
         }
     }
@@ -39,7 +54,6 @@ class DatabaseProvisioningService
     {
         $dbExists = DB::select('SELECT 1 FROM pg_database WHERE datname = ?', [$dbName]);
         if (empty($dbExists)) {
-            // CREATE DATABASE não pode rodar em transaction — usa PDO direto
             $pdo = DB::connection()->getPdo();
             $pdo->exec("CREATE DATABASE \"{$dbName}\"");
         }
@@ -49,8 +63,6 @@ class DatabaseProvisioningService
             $password = 'tenant_' . Str::random(16);
             DB::statement("CREATE USER \"{$dbUser}\" WITH PASSWORD '{$password}'");
             DB::statement("GRANT ALL PRIVILEGES ON DATABASE \"{$dbName}\" TO \"{$dbUser}\"");
-
-            // Garante acesso ao schema public no novo banco
             $this->grantSchemaAccess($dbName, $dbUser);
         }
     }
@@ -62,7 +74,6 @@ class DatabaseProvisioningService
         $host       = config('database.connections.pgsql.host');
         $port       = config('database.connections.pgsql.port', 5432);
 
-        // Conecta diretamente no novo banco para conceder privilégios no schema
         $dsn = "pgsql:host={$host};port={$port};dbname={$dbName}";
         $tempPdo = new \PDO($dsn, $masterUser, $masterPass, [
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
@@ -72,98 +83,53 @@ class DatabaseProvisioningService
 
     private function runMigrations(string $dbName): void
     {
-        $output = $this->dockerExec($dbName, 'php artisan migrate --force');
-
-        // Se a saída contiver erro de conexão/comando ou estiver vazia, migrations não rodaram
-        if ($this->outputIndicatesFailure($output)) {
+        $out = $this->execInInstancia($dbName, 'php artisan migrate --force');
+        if ($this->outputIndicatesFailure($out)) {
             throw new \RuntimeException(
-                "Migrations não puderam ser executadas no tenant '{$dbName}'. " .
-                "Verifique se admin-backend tem Docker CLI e socket montado, e se o container " .
-                "da instância está em execução (padrão: instancia-demo; TENANT_RUNNER_CONTAINER no .env). " .
-                "Saída: " . substr($output, 0, 300)
+                "Migrations falharam para {$dbName}. Saída: " . substr($out, 0, 500)
             );
         }
     }
 
     private function runSeeder(string $dbName): void
     {
-        $output = $this->dockerExec($dbName, 'php artisan db:seed --class=ReferenceSeeder --force');
-
-        if ($this->outputIndicatesFailure($output)) {
+        $out = $this->execInInstancia(
+            $dbName,
+            'php artisan db:seed --class=ReferenceSeeder --force'
+        );
+        if ($this->outputIndicatesFailure($out)) {
             throw new \RuntimeException(
-                "Seeder não pôde ser executado no tenant '{$dbName}'. Saída: " . substr($output, 0, 300)
+                "Seeder falhou para {$dbName}. Saída: " . substr($out, 0, 500)
             );
         }
     }
 
     /**
-     * Executa um comando no container da instância (TENANT_RUNNER_CONTAINER) com o banco do novo tenant.
-     * Usa as credenciais master que têm acesso a todos os databases.
+     * Roda um comando Artisan dentro do container `instancia` compartilhado,
+     * sobrescrevendo DB_DATABASE via env para apontar pro banco do tenant.
      */
-    private function dockerExec(string $dbName, string $command): string
+    private function execInInstancia(string $dbName, string $artisanCmd): string
     {
-        // Verifica se docker está disponível antes de tentar
-        $dockerPath = trim(shell_exec('which docker 2>/dev/null') ?? '');
-        if (empty($dockerPath)) {
-            return ''; // Tratado como falha em outputIndicatesFailure()
-        }
-
-        $containerName = env('TENANT_RUNNER_CONTAINER', 'instancia-demo');
-        $dbHost        = config('database.connections.pgsql.host');
-        $dbUsername    = config('database.connections.pgsql.username');
-        $dbPassword    = config('database.connections.pgsql.password');
-        $dbPort        = config('database.connections.pgsql.port', 5432);
-
-        // DB_URL / DATABASE_URL no .env do tenant sobrescrevem o efeito de DB_* no Laravel.
-        // Zera explicitamente para o artisan usar só host + database + credenciais passadas aqui.
-        $envFlags = implode(' ', [
-            '-e DB_URL=',
-            '-e DATABASE_URL=',
-            '-e DB_CONNECTION=pgsql',
-            '-e DB_DATABASE=' . escapeshellarg($dbName),
-            '-e DB_HOST=' . escapeshellarg($dbHost),
-            '-e DB_PORT=' . escapeshellarg((string) $dbPort),
-            '-e DB_USERNAME=' . escapeshellarg($dbUsername),
-            '-e DB_PASSWORD=' . escapeshellarg($dbPassword),
-        ]);
-
-        $fullCmd = "docker exec {$envFlags} {$containerName} {$command} 2>&1";
-        $output  = shell_exec($fullCmd) ?? '';
-
-        return $output;
+        $container = env('INSTANCIA_CONTAINER', 'instancia-backend');
+        $cmd       = 'docker exec -e DB_DATABASE=' . escapeshellarg($dbName)
+                   . ' ' . escapeshellarg($container) . ' ' . $artisanCmd . ' 2>&1';
+        return (string) (shell_exec($cmd) ?? '');
     }
 
-    /**
-     * Detecta saídas que indicam que o comando não foi executado com sucesso.
-     */
     private function outputIndicatesFailure(string $output): bool
     {
-        if (trim($output) === '') {
-            return true; // docker não encontrado ou retornou vazio
-        }
-
-        $errorPatterns = [
-            'docker: not found',
-            'No such container',
-            'Error response from daemon',
-            'permission denied',
-            'Cannot connect to the Docker daemon',
-            'SQLSTATE',
-            'Error:',
+        if (trim($output) === '') return true;
+        $patterns = [
+            'docker: not found', 'No such container', 'Error response from daemon',
+            'permission denied', 'Cannot connect to the Docker daemon',
+            'SQLSTATE', 'Error:', 'Exception',
         ];
-
-        foreach ($errorPatterns as $pattern) {
-            if (stripos($output, $pattern) !== false) {
-                return true;
-            }
+        foreach ($patterns as $p) {
+            if (stripos($output, $p) !== false) return true;
         }
-
         return false;
     }
 
-    /**
-     * Garante que as migrations realmente rodaram neste database (evita falso sucesso).
-     */
     private function assertTenantUsuariosTable(string $dbName): void
     {
         $masterUser = config('database.connections.pgsql.username');
@@ -175,15 +141,12 @@ class DatabaseProvisioningService
         $pdo = new \PDO($dsn, $masterUser, $masterPass, [
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
         ]);
-
         $stmt = $pdo->query(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'usuarios' LIMIT 1"
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='usuarios' LIMIT 1"
         );
-
         if (! $stmt || ! $stmt->fetchColumn()) {
             throw new \RuntimeException(
-                "Após migrate/seed, a tabela \"usuarios\" não existe em \"{$dbName}\". " .
-                'Provável causa: DB_URL no .env do tenant apontando para outro banco — corrigido no docker exec; rode Reprovisionar de novo.'
+                "Após migrate/seed a tabela 'usuarios' não existe em {$dbName}."
             );
         }
     }

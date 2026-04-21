@@ -15,8 +15,14 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
+            'auth'        => \Illuminate\Auth\Middleware\Authenticate::class,
+            'user.active' => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
+
+        // O refresh token é um JWT já assinado — não queremos que Laravel o
+        // recriptografe via EncryptCookies (o browser devolveria cifrado e
+        // quebraria a decodificação).
+        $middleware->encryptCookies(except: [\App\Services\TokenService::COOKIE_NAME]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (AuthenticationException $e, Request $request) {

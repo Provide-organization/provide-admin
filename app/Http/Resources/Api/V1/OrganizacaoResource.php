@@ -25,6 +25,12 @@ class OrganizacaoResource extends JsonResource
                 'db_name'        => $instance->db_name,
                 'provisioned_at' => $instance->provisioned_at?->toDateTimeString(),
             ] : null,
+            // Presente apenas na resposta de criação com `admin_inicial` no payload.
+            // O frontend deve exibir a senha temporária UMA ÚNICA VEZ.
+            'admin_inicial' => $this->when(
+                $this->resource->getAttribute('admin_inicial') !== null,
+                fn () => $this->resource->getAttribute('admin_inicial')
+            ),
         ];
     }
 }

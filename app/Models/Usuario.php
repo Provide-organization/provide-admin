@@ -43,7 +43,15 @@ class Usuario extends Authenticatable implements JWTSubject
 
     public function getJWTCustomClaims(): array
     {
-        return [];
+        $this->loadMissing('perfis');
+
+        return array_filter([
+            'iss'       => env('JWT_ISSUER', 'platform'),
+            'kid'       => env('JWT_KID'),
+            'org_slug'  => null,
+            'role'      => $this->perfis->min('nivel') ?? 1,
+            'sub_type'  => 'platform_admin',
+        ], static fn ($v) => $v !== null);
     }
 
     public function pessoa(): HasOne

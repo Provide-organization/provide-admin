@@ -5,22 +5,25 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\OrganizacaoController;
 use App\Http\Controllers\Api\V1\TenantAbrigoController;
 use App\Http\Controllers\Api\V1\TenantUsuarioController;
+use App\Http\Controllers\Api\V1\TenantUsuarioPermissaoController;
 use App\Http\Controllers\Api\V1\UsuarioController;
 
 Route::prefix('v1')->group(function () {
 
     Route::prefix('auth')->group(function () {
-        Route::post('login', [AuthController::class, 'login']);
+        Route::post('login',   [AuthController::class, 'login']);
+        Route::post('refresh', [AuthController::class, 'refresh']);
     });
 
     // Endpoint público — verifica se organização existe e está ativa (sem autenticação)
     Route::get('organizacoes/{slug}/check', [OrganizacaoController::class, 'check']);
 
-    Route::middleware('auth:api')->group(function () {
+    Route::middleware(['auth:api', 'user.active'])->group(function () {
 
         Route::prefix('auth')->group(function () {
-            Route::post('logout', [AuthController::class, 'logout']);
-            Route::get('me',     [AuthController::class, 'me']);
+            Route::post('logout',          [AuthController::class, 'logout'])->name('auth.logout');
+            Route::get('me',               [AuthController::class, 'me']);
+            Route::post('change-password', [AuthController::class, 'changePassword']);
         });
 
         // ── Organizações ───────────────────────────────────────────────────────
@@ -31,8 +34,16 @@ Route::prefix('v1')->group(function () {
         Route::get('organizacoes/{slug}/info',          [OrganizacaoController::class, 'showBySlug']);
         Route::post('organizacoes/{slug}/reprovision',  [OrganizacaoController::class, 'reprovision']);
 
+        Route::get('organizacoes/{organizacao_slug}/permissoes', [TenantUsuarioPermissaoController::class, 'indexCatalog']);
+        Route::get('organizacoes/{organizacao_slug}/perfis-permissoes-nivel/{nivel}', [TenantUsuarioPermissaoController::class, 'slugsPorNivel'])
+            ->whereNumber('nivel');
+
         // ── Usuários do tenant gerenciados pela plataforma ─────────────────────
         Route::prefix('organizacoes/{organizacao_slug}/usuarios')->group(function () {
+            Route::get('/{usuario_id}/permissoes-resumo', [TenantUsuarioPermissaoController::class, 'permissoesResumo']);
+            Route::put('/{usuario_id}/gestao-permissoes', [TenantUsuarioPermissaoController::class, 'syncGestao']);
+            Route::get('/{usuario_id}/permissoes-overrides', [TenantUsuarioPermissaoController::class, 'showOverrides']);
+            Route::put('/{usuario_id}/permissoes-overrides', [TenantUsuarioPermissaoController::class, 'syncOverrides']);
             Route::get('/',                             [TenantUsuarioController::class, 'index']);
             Route::post('/',                            [TenantUsuarioController::class, 'store']);
             Route::put('/{usuario_id}',                 [TenantUsuarioController::class, 'update']);

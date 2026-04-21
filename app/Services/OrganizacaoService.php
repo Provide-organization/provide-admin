@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 class OrganizacaoService
 {
-    public function __construct(private readonly DatabaseProvisioningService $provisioning) {}
+    public function __construct(
+        private readonly DatabaseProvisioningService $provisioning,
+        private readonly TenantUsuarioService $tenantUsuarios,
+    ) {}
 
     public function index(): Collection
     {
@@ -27,6 +30,10 @@ class OrganizacaoService
             })
             ->forceDelete();
 
+        // Separa o payload do admin_inicial (não pertence à tabela organizacoes)
+        $adminPayload = $data['admin_inicial'] ?? null;
+        unset($data['admin_inicial']);
+
         $organizacao = Organizacao::create($data);
 
         $instance = TenantInstance::create([
@@ -38,11 +45,20 @@ class OrganizacaoService
             'status'         => 'provisioning',
         ]);
 
-        // Provisiona banco, migrations e seeder de forma síncrona (Fase 2)
         try {
             $this->provisioning->provision($instance);
+
+            if (is_array($adminPayload) && !empty($adminPayload)) {
+                $result = $this->seedOrgAdmin($organizacao->slug, $adminPayload);
+                // Expõe a senha temporária como atributo da Organizacao (não persistido)
+                // para que o Resource possa incluí-la na resposta (one-time display).
+                $organizacao->setAttribute('admin_inicial', [
+                    'email'            => $result['usuario']['email'],
+                    'nome'             => $result['usuario']['nome'] ?? $adminPayload['nome'],
+                    'senha_temporaria' => $result['senha_temporaria'],
+                ]);
+            }
         } catch (\Throwable $e) {
-            // Falha no provisionamento não desfaz a org — admin pode reprovisionare
             \Illuminate\Support\Facades\Log::error('Falha no provisionamento do tenant', [
                 'slug'  => $organizacao->slug,
                 'error' => $e->getMessage(),
@@ -50,6 +66,22 @@ class OrganizacaoService
         }
 
         return $organizacao->load('tenantInstance');
+    }
+
+    /**
+     * Cria o usuário admin inicial da organização no banco do tenant.
+     * Perfil: admin_municipio (nivel = 1). Retorna payload com senha_temporaria.
+     */
+    private function seedOrgAdmin(string $slug, array $payload): array
+    {
+        return $this->tenantUsuarios->store($slug, [
+            'nome'             => $payload['nome'],
+            'email'            => $payload['email'],
+            'cpf'              => $payload['cpf']   ?? null,
+            'senha_temporaria' => $payload['senha_temp'] ?? null,
+            'role'             => 1,
+            'ativo'            => true,
+        ]);
     }
 
     public function update(Organizacao $organizacao, array $data): Organizacao
