@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Cache;
+use App\Support\TenantPermissionCache;
 use Illuminate\Support\Facades\DB;
 
 class TenantUsuarioPermissaoService
@@ -70,7 +70,7 @@ class TenantUsuarioPermissaoService
             $this->replaceGlobalOverrides($conn, $usuarioId, $overrides, $now);
         });
 
-        $this->forgetInstanciaPermissionCache($slug, $usuarioId);
+        TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
     }
 
     /**
@@ -105,7 +105,7 @@ class TenantUsuarioPermissaoService
             $this->replaceGlobalOverrides($conn, $usuarioId, $overrides, $now);
         });
 
-        $this->forgetInstanciaPermissionCache($slug, $usuarioId);
+        TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
     }
 
     /**
@@ -256,22 +256,6 @@ class TenantUsuarioPermissaoService
                 'created_at'   => $now,
                 'updated_at'   => $now,
             ]);
-        }
-    }
-
-    /**
-     * Melhor esforço: se admin e instância compartilham o mesmo Redis e prefixo,
-     * invalida o cache do PermissionResolver da instância.
-     */
-    private function forgetInstanciaPermissionCache(string $slug, int $usuarioId): void
-    {
-        $dbName = 'tenant_' . $slug;
-        $key     = 'perms:u:' . $dbName . ':' . $usuarioId;
-
-        try {
-            Cache::forget($key);
-        } catch (\Throwable) {
-            // ignore
         }
     }
 }

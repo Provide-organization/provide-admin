@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\TenantPermissionCache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -96,6 +97,8 @@ class TenantUsuarioService
             'updated_at'  => $now,
         ]);
 
+        TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
+
         $usuario = $this->findById($conn, $usuarioId);
 
         return [
@@ -154,6 +157,10 @@ class TenantUsuarioService
                 ->update(['ativo' => $data['ativo'], 'updated_at' => $now]);
         }
 
+        if (isset($data['role']) || isset($data['ativo'])) {
+            TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
+        }
+
         return $this->findById($conn, $usuarioId);
     }
 
@@ -170,6 +177,8 @@ class TenantUsuarioService
         DB::connection($conn)->table('usuarios')
             ->where('id', $usuarioId)
             ->update(['deleted_at' => now(), 'updated_at' => now()]);
+
+        TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
     }
 
     // ── Reset de senha ────────────────────────────────────────────────────────
@@ -203,6 +212,8 @@ class TenantUsuarioService
         DB::connection($conn)->table('usuarios')
             ->where('id', $usuarioId)
             ->update(['ativo' => !$usuario->ativo, 'updated_at' => now()]);
+
+        TenantPermissionCache::forgetForUserOnConnection($conn, $usuarioId);
 
         return $this->findById($conn, $usuarioId);
     }
