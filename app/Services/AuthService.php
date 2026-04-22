@@ -52,9 +52,9 @@ class AuthService
             throw new InactiveAccountException;
         }
 
-        $pair = $this->tokens->issuePair($usuario);
+        $accessOnly = $this->tokens->issueAccessOnly($usuario);
 
-        return array_merge($pair, [
+        return array_merge($accessOnly, [
             'user' => $this->buildUserPayload($usuario),
         ]);
     }

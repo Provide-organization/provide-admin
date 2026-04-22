@@ -18,7 +18,8 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   refresh_token — longo (default 14 dias) — devolvido em cookie HttpOnly
  *                   "provide_refresh" (SameSite=Lax, Path=/api/v1/auth).
  *
- * O refresh é um JWT também (mesma chave), diferenciado pelo claim `type`.
+ * O refresh é um JWT (mesma chave), com claim `type=refresh`, reutilizável até `exp`
+ * (renovação via POST /auth/refresh só emite novo access; novo refresh só no login).
  */
 class TokenService
 {
@@ -48,6 +49,20 @@ class TokenService
     }
 
     /**
+     * Apenas access; o refresh no cookie permanece o mesmo até expirar (novo refresh só no login).
+     */
+    public function issueAccessOnly(Usuario $usuario): array
+    {
+        $access = JWTAuth::customClaims(['type' => 'access'])->fromUser($usuario);
+
+        return [
+            'access_token' => $access,
+            'token_type'   => 'bearer',
+            'expires_in'   => auth('api')->factory()->getTTL() * 60,
+        ];
+    }
+
+    /**
      * @throws JWTException se o token for inválido / expirado / tipo errado.
      */
     public function userFromRefresh(string $refreshToken): Usuario
@@ -69,9 +84,6 @@ class TokenService
         if (! $usuario) {
             throw new JWTException('Usuário do refresh token não encontrado.');
         }
-
-        // Invalida este refresh (rotação: uso único).
-        JWTAuth::invalidate($refreshToken);
 
         return $usuario;
     }
