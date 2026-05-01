@@ -15,7 +15,7 @@ class PlatformAdminSeeder extends Seeder
     {
         $perfil = Perfil::where('nome', 'admin_plataforma')->firstOrFail();
 
-        $admin = Usuario::firstOrCreate(
+        $admin = Usuario::updateOrCreate(
             ['email' => 'admin@provide.app'],
             [
                 'email'             => 'admin@provide.app',

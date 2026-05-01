@@ -34,6 +34,8 @@ class EnsureJwtKeys extends Command
             $kid = trim((string) File::get($kidPath));
             $this->info("JWT keys já presentes (kid={$kid}).");
             $this->syncPublicKey($keys, $kid, File::get($publicPath));
+            $this->fixKeysOwnershipIfRoot($privatePath, $publicPath, $kidPath);
+
             return self::SUCCESS;
         }
 
@@ -48,10 +50,42 @@ class EnsureJwtKeys extends Command
         @chmod($publicPath, 0644);
         @chmod($kidPath, 0644);
 
+        $this->fixKeysOwnershipIfRoot($privatePath, $publicPath, $kidPath);
+
         $this->syncPublicKey($keys, $pair['kid'], $pair['public']);
 
         $this->info("Par RSA gerado. kid={$pair['kid']}");
         return self::SUCCESS;
+    }
+
+    /**
+     * `docker exec` sem usuário roda como root: cria PEM 0600 root:root e o PHP-FPM (www-data)
+     * não consegue ler a chave privada — login quebra com "Could not create token" / Permission denied.
+     */
+    private function fixKeysOwnershipIfRoot(string $privatePath, string $publicPath, string $kidPath): void
+    {
+        if (! function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            return;
+        }
+
+        $user = 'www-data';
+        foreach ([$privatePath, $publicPath, $kidPath] as $path) {
+            if (! is_file($path)) {
+                continue;
+            }
+            @chown($path, $user);
+            @chgrp($path, $user);
+        }
+
+        if (is_file($privatePath)) {
+            @chmod($privatePath, 0600);
+        }
+        if (is_file($publicPath)) {
+            @chmod($publicPath, 0644);
+        }
+        if (is_file($kidPath)) {
+            @chmod($kidPath, 0644);
+        }
     }
 
     private function syncPublicKey(KeyService $keys, string $kid, string $publicKey): void
