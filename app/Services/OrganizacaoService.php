@@ -70,7 +70,7 @@ class OrganizacaoService
 
     /**
      * Cria o usuário admin inicial da organização no banco do tenant.
-     * Perfil: admin_municipio (nivel = 1). Retorna payload com senha_temporaria.
+     * Perfil: admin_municipio (nivel = 2 em ReferenceSeeder).
      */
     private function seedOrgAdmin(string $slug, array $payload): array
     {
@@ -79,7 +79,7 @@ class OrganizacaoService
             'email'            => $payload['email'],
             'cpf'              => $payload['cpf']   ?? null,
             'senha_temporaria' => $payload['senha_temp'] ?? null,
-            'role'             => 1,
+            'role'             => 2,
             'ativo'            => true,
         ]);
     }

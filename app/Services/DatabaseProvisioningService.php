@@ -93,6 +93,10 @@ class DatabaseProvisioningService
 
     private function runSeeder(string $dbName): void
     {
+        // Somente referência (RBAC, módulos, cidades, etc.). Não rodar PessoaSeeder/
+        // OperacionalSeeder aqui — isso populava toda organização nova com usuários e
+        // abrigos da demo (Lajeado). O admin inicial vem do payload admin_inicial na
+        // criação da org; o ambiente demo recebe seed operacional via setup-dev.sh.
         $out = $this->execInInstancia(
             $dbName,
             'php artisan db:seed --class=ReferenceSeeder --force'
@@ -107,18 +111,22 @@ class DatabaseProvisioningService
     /**
      * Roda um comando Artisan dentro do container `instancia` compartilhado,
      * sobrescrevendo DB_DATABASE via env para apontar pro banco do tenant.
+     *
+     * Limpa DB_URL: se estiver definido no .env do container, o Laravel pode ignorar
+     * DB_DATABASE e manter o banco errado (ex.: tenant_demo para todo provisionamento).
      */
     private function execInInstancia(string $dbName, string $artisanCmd): string
     {
         $container = env('INSTANCIA_CONTAINER', 'instancia-backend');
-        $cmd       = 'docker exec -e DB_DATABASE=' . escapeshellarg($dbName)
-                   . ' ' . escapeshellarg($container) . ' ' . $artisanCmd . ' 2>&1';
+        $db        = escapeshellarg($dbName);
+        $ct        = escapeshellarg($container);
+        $cmd       = "docker exec -e DB_DATABASE={$db} -e DB_URL= {$ct} {$artisanCmd} 2>&1";
+
         return (string) (shell_exec($cmd) ?? '');
     }
 
     private function outputIndicatesFailure(string $output): bool
     {
-        if (trim($output) === '') return true;
         $patterns = [
             'docker: not found', 'No such container', 'Error response from daemon',
             'permission denied', 'Cannot connect to the Docker daemon',
