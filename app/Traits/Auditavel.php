@@ -23,6 +23,11 @@ trait Auditavel
 
     private static function registrarAudit(string $acao, $model, ?array $antes, ?array $depois): void
     {
+        if (app()->runningInConsole())
+        {
+            return;
+        }
+
         // Remove campos sensíveis
         $camposSensiveis = ['senha', 'password', 'remember_token'];
         $antes  = $antes  ? array_diff_key($antes,  array_flip($camposSensiveis)) : null;
