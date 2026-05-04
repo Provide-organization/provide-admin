@@ -17,6 +17,7 @@ class TenantInstance extends Model
         'slug',
         'container_name',
         'db_name',
+        'db_logs_name',
         'db_username',
         'status',
         'provisioned_at',
