@@ -99,6 +99,18 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        'platform_logs' => [
+            'driver'   => 'pgsql',
+            'host'     => env('DB_HOST', 'db'),
+            'port'     => env('DB_PORT', '5432'),
+            'database' => 'platform_logs',
+            'username' => env('DB_USERNAME', 'provide'),
+            'password' => env('DB_PASSWORD', 'secret'),
+            'charset'  => 'utf8',
+            'prefix'   => '',
+            'schema'   => 'public',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

@@ -26,15 +26,19 @@ class DatabaseProvisioningService
     public function provision(TenantInstance $instance): void
     {
         try {
-            // 1) Database isolado
+            // 1) Databases isoladas
             $this->createDatabase($instance->db_name, $instance->db_username);
+            $this->createDatabase($instance->db_logs_name, $instance->db_username);
 
-            // 2) Migrations + seeder dentro do container compartilhado
+            // 2) Migrations do banco principal
             $this->runMigrations($instance->db_name);
             $this->runSeeder($instance->db_name);
             $this->assertTenantUsuariosTable($instance->db_name);
 
-            // 3) Marca ativo
+            // 3) Migrations do banco de logs (pasta separada)
+            $this->runLogMigrations($instance->db_logs_name);
+
+            // 4) Marca ativo
             $instance->update([
                 'status'         => 'active',
                 'container_name' => env('INSTANCIA_CONTAINER', 'instancia-backend'),
@@ -62,9 +66,11 @@ class DatabaseProvisioningService
         if (empty($userExists)) {
             $password = 'tenant_' . Str::random(16);
             DB::statement("CREATE USER \"{$dbUser}\" WITH PASSWORD '{$password}'");
-            DB::statement("GRANT ALL PRIVILEGES ON DATABASE \"{$dbName}\" TO \"{$dbUser}\"");
-            $this->grantSchemaAccess($dbName, $dbUser);
         }
+
+        // Garante privilégios nos dois bancos (principal + logs)
+        DB::statement("GRANT ALL PRIVILEGES ON DATABASE \"{$dbName}\" TO \"{$dbUser}\"");
+        $this->grantSchemaAccess($dbName, $dbUser);
     }
 
     private function grantSchemaAccess(string $dbName, string $dbUser): void
@@ -74,11 +80,11 @@ class DatabaseProvisioningService
         $host       = config('database.connections.pgsql.host');
         $port       = config('database.connections.pgsql.port', 5432);
 
-        $dsn = "pgsql:host={$host};port={$port};dbname={$dbName}";
-        $tempPdo = new \PDO($dsn, $masterUser, $masterPass, [
+        $dsn    = "pgsql:host={$host};port={$port};dbname={$dbName}";
+        $tmpPdo = new \PDO($dsn, $masterUser, $masterPass, [
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
         ]);
-        $tempPdo->exec("GRANT ALL ON SCHEMA public TO \"{$dbUser}\"");
+        $tmpPdo->exec("GRANT ALL ON SCHEMA public TO \"{$dbUser}\"");
     }
 
     private function runMigrations(string $dbName): void
@@ -87,6 +93,19 @@ class DatabaseProvisioningService
         if ($this->outputIndicatesFailure($out)) {
             throw new \RuntimeException(
                 "Migrations falharam para {$dbName}. Saída: " . substr($out, 0, 500)
+            );
+        }
+    }
+
+    private function runLogMigrations(string $dbLogsName): void
+    {
+        $out = $this->execInInstancia(
+            $dbLogsName,
+            'php artisan migrate --force --path=database/migrations/logs'
+        );
+        if ($this->outputIndicatesFailure($out)) {
+            throw new \RuntimeException(
+                "Migrations de log falharam para {$dbLogsName}. Saída: " . substr($out, 0, 500)
             );
         }
     }

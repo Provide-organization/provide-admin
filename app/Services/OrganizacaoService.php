@@ -41,6 +41,7 @@ class OrganizacaoService
             'slug'           => $organizacao->slug,
             'container_name' => "tenant-{$organizacao->slug}",
             'db_name'        => "tenant_{$organizacao->slug}",
+            'db_logs_name'   => "tenant_{$organizacao->slug}_logs",
             'db_username'    => "tenant_{$organizacao->slug}_user",
             'status'         => 'provisioning',
         ]);
